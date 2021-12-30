@@ -5,6 +5,13 @@ function alertMsg(msg) {
     vscode.window.showInformationMessage(msg)
 }
 
+function checkFileExt(editor) {
+    if (editor.document.fileName.endsWith('.py')) {
+        return true
+    }
+    return false
+}
+
 async function post(url, data) {
     const res = await fetch(url, {
         method: "post", headers: { "Content-Type": "application/json" },
@@ -59,16 +66,16 @@ class PyqaPlugin {
     addCommand(name, func) {
         let id = this.prefix + name
         this.disposes.push(
-            vscode.commands.registerCommand(id, func)
+            vscode.commands.registerTextEditorCommand(id, func)
         )
         this.commands[name] = id
     }
 
     async complete(text, row, col, trigger) {
+        let lines = text.split('\n').slice(0, col+this.extraRows)
         return post(this.server + "/suggest/answer", {
-            text: text, trigger: trigger,
-            row: row, col: col,
-            commands: this.commands, 
+            lines: lines, trigger: trigger,
+            row: row, col: col, 
             uuid: this.uuid
         })
     }
@@ -95,7 +102,7 @@ class PyqaPlugin {
 
     async provideCompletionItems(model, position, token, context) {
         let trigger = context.triggerCharacter;
-        if (!trigger && this.results !== null) {
+        if (this.keyTrigger === ' ' && this.results !== null) {
             let result = JSON.parse(JSON.stringify(this.results))
             this.results = null;
             return result
@@ -118,7 +125,9 @@ class PyqaPlugin {
      * @returns 
      */
      triggerSuggestWhenCursorStopped(e) {
+        if (!checkFileExt(e.textEditor)) return;
         this.results = null;
+        this.keyTrigger = '';
         clearTimeout(this.cursorTimeout)
         // 1 - keyboard/snippet 2 - mouse 3 - command
         if (e.kind !== 1 && e.kind !== undefined) {
@@ -155,9 +164,16 @@ class PyqaPlugin {
         let conf = await post(this.server + '/suggest/conf', {uuid: this.uuid})
         this.triggers = conf.triggers || this.triggers
         this.minAutoSuggestDelay = conf.minAutoSuggestDelay || this.minAutoSuggestDelay
+        this.extraRows = conf.extraRows || this.extraRows
 
-        this.addCommand('feedback', () => this.feedback())
-        this.addCommand('suggest', () => this.triggerSuggest('?'))
+        this.addCommand('feedback', (editor) => {
+            if (checkFileExt(editor))
+                this.feedback()
+        })
+        this.addCommand('suggest', (editor) => {
+            if (checkFileExt(editor))
+                this.triggerSuggest('?')
+        })
 
         let cursorDispose = vscode.window.onDidChangeTextEditorSelection(
             e => this.triggerSuggestWhenCursorStopped(e)

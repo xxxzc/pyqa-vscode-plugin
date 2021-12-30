@@ -42,7 +42,6 @@
 		"keybindings": {
 			"command": "pyqa-plugin.suggest",
 			"key": "alt+/",
-			"mac": "cmd+/",
 			"when": "editorTextFocus"
 		},
 		"configuration": {
