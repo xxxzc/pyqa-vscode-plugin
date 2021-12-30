@@ -23,16 +23,24 @@
 	"contributes": {
 		"commands": [
 			{
-				"command": "pyqa-vscode.feedback",
-				"title": "pyqa:feedback"
+				"command": "pyqa-plugin.feedback",
+				"title": "pyqa-plugin:feedback"
 			},
 			{
-				"command": "pyqa-vscode.complete",
-				"title": "pyqa:complete"
+				"command": "pyqa-plugin.suggest",
+				"title": "pyqa-plugin:suggest"
+			},
+			{
+				"command": "pyqa-plugin.enable",
+				"title": "pyqa-plugin:enable"
+			},
+			{
+				"command": "pyqa-plugin.disable",
+				"title": "pyqa-plugin:disable"
 			}
 		],
 		"keybindings": {
-			"command": "pyqa-vscode.complete",
+			"command": "pyqa-plugin.suggest",
 			"key": "alt+/",
 			"mac": "cmd+/",
 			"when": "editorTextFocus"
@@ -41,22 +49,22 @@
 			"type": "object",
 			"title": "pyqa-vscode",
 			"properties": {
-				"pyqaPlugin.server": {
+				"pyqa-plugin.server": {
 					"type": "string",
 					"default": "http://localhost:5000",
 					"description": "pyqa server"
 				},
-				"pyqaPlugin.uuid": {
+				"pyqa-plugin.uuid": {
 					"type": "string",
 					"default": "guest",
 					"description": "your uuid"
 				},
-				"pyqaPlugin.autoSuggestDelay": {
+				"pyqa-plugin.autoSuggestDelay": {
 					"type": "integer",
 					"default": 500,
 					"description": "delay(ms, >=400ms) after cursor stop to trigger autosuggest, 0 to disable autosuggest"
 				},
-				"pyqaPlugin.triggers": {
+				"pyqa-plugin.triggers": {
 					"type": "array",
 					"default": ["?", "!"],
 					"description": "trigger character list"

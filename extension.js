@@ -1,111 +1,200 @@
 const vscode = require('vscode');
 const fetch = require('node-fetch')
 
-const cp = "pyqa-vscode."
-const sp = "pyqaPlugin."
-const feedbackId = cp + 'feedback'
-const restartId = cp + 'restart'
-const completeId = cp + "complete"
+function alertMsg(msg) {
+    vscode.window.showInformationMessage(msg)
+}
 
-function activate(context) {
-    var cfg = vscode.workspace.getConfiguration()
-    const server = cfg.get(sp+"server")
-    const uuid = cfg.get(sp+"uuid")
+async function post(url, data) {
+    const res = await fetch(url, {
+        method: "post", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+    });
+    return await res.json();
+}
 
-    var triggers = new Set(...cfg.get(sp+"triggers"))
-    var autoSuggestDelay = cfg.get(sp+"autoSuggestDelay")
-
-    context.subscriptions.push(vscode.commands.registerCommand(
-        feedbackId, function () {
-            // vscode.window.showInformationMessage('pyqa:enable');
-            fetch(server + "/suggest/feedback", { 
-                    method: "post", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({uuid: uuid }) })
-            .then(response => response.json()).then(data => {
-                vscode.window.showInformationMessage(data.msg)
-            })
-        }
-    ));
-    
-    context.subscriptions.push(vscode.commands.registerCommand(
-        completeId, function () {
-            KeyTrigger = '?'
-            vscode.commands.executeCommand('editor.action.triggerSuggest')
-        }
-    ));
-
-    async function complete(text, position, trigger) {
-        let response = await fetch(server + "/suggest/answer", {
-            method: "post", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                    text: text, trigger: trigger,
-                    row: position.line, col: position.character-1,
-                    commands: { "feedback": feedbackId }, 
-                    uuid: uuid
-            })
-        })
-        return response.json()
+class PyqaPlugin {
+    constructor() {
+        this.updateConfig()
+        this.commands = {}
+        this.keyTrigger = ''
+        this.results = null
+        this.cursorTimeout = null
+        this.disposes = []
+        this.prefix = 'pyqa-plugin.'
+        this.triggers = ['?', '!']
+        this.minAutoSuggestDelay = 400
     }
 
-    var results = null;
-    var cursorTimeout = undefined
-    function triggerSuggest(code, position) {
-        position.character += 1
-        complete(code, position, ' ').then(
+    triggerSuggest(trigger=' ') {
+        this.keyTrigger = trigger
+        vscode.commands.executeCommand('editor.action.triggerSuggest')
+    }
+
+    get_row_col(pos) {
+        if (pos._line) {
+            return [pos._line, pos._character-1]
+        }
+        return [pos.line, pos.character-1]
+    }
+
+    lineAt(e, row) {
+        return e.textEditor.document.lineAt(row)
+    }
+
+    get_cursor(e) {
+        let ch = undefined
+        let [row, col] = this.get_row_col(e.textEditor.selection.active)
+        if (col > -1) 
+            ch = this.lineAt(e, row).text[col]
+        return [row, col, ch]
+    }
+
+    feedback() {
+        post(this.server + "/suggest/feedback", {uuid: this.uuid}).then(
+            data => alertMsg(data.msg)
+        )
+    }
+
+    addCommand(name, func) {
+        let id = this.prefix + name
+        this.disposes.push(
+            vscode.commands.registerCommand(id, func)
+        )
+        this.commands[name] = id
+    }
+
+    async complete(text, row, col, trigger) {
+        return post(this.server + "/suggest/answer", {
+            text: text, trigger: trigger,
+            row: row, col: col,
+            commands: this.commands, 
+            uuid: this.uuid
+        })
+    }
+
+    delaySuggest(code, row, col) {
+        // trigger ' ' to disable some features
+        this.complete(code, row, col, ' ').then(
             res => {
                 if (res && res.items && res.items.length) {
-                    results = res;
-                    vscode.commands.executeCommand('editor.action.triggerSuggest')
+                    this.results = res
+                    this.triggerSuggest(' ')
                 }
             }
         )
     }
 
-    vscode.window.onDidChangeTextEditorSelection(e => {
-        results = null;
-        clearTimeout(cursorTimeout)
-        let ch = ''
-        let pos = e.textEditor.selection.active
-        position = {line: pos._line, character: pos._character}
-        if (position.character == 0)
-            ch = undefined
-        else
-            ch = e.textEditor.document.lineAt(position.line).text[position.character-1]
-        if (!ch || ch == '' || triggers.has(ch)) {
+    deactivate() {
+        clearTimeout(this.cursorTimeout)
+        for (let dispose of this.disposes) {
+            dispose.dispose()
+        }
+        this.disposes = []
+    }
+
+    async provideCompletionItems(model, position, token, context) {
+        let trigger = context.triggerCharacter;
+        if (!trigger && this.results !== null) {
+            let result = JSON.parse(JSON.stringify(this.results))
+            this.results = null;
+            return result
+        }
+        let [row, col] = this.get_row_col(position)
+        // autocomplete by keyTrigger
+        if (this.keyTrigger !== '') {
+            trigger = this.keyTrigger
+            col += 1
+        }
+        this.keyTrigger = ''
+        this.results = null;
+        if (!trigger) return null;
+        return this.complete(model.getText(), row, col, trigger)
+    }
+
+    /**
+     * trigger suggest when cursor stopped
+     * @param {*} e 
+     * @returns 
+     */
+     triggerSuggestWhenCursorStopped(e) {
+        this.results = null;
+        clearTimeout(this.cursorTimeout)
+        // 1 - keyboard/snippet 2 - mouse 3 - command
+        if (e.kind !== 1 && e.kind !== undefined) {
+            // 其他方式触发实际体验有点烦人，先关了，后续再考虑优化
             return
         }
-        if (autoSuggestDelay > 0) {
-            cursorTimeout = setTimeout(triggerSuggest, Math.max(autoSuggestDelay, 400), 
-                                        e.textEditor.document.getText(), position)
+        let [row, col, ch] = this.get_cursor(e)
+        if (!ch || ch == '' || this.triggers.indexOf(ch) > -1) {
+            return
         }
-    }) 
-    
-	let completeDisposable = vscode.languages.registerCompletionItemProvider("python", {
-        provideCompletionItems: async function (document, position, token, ctx) {
-            let trigger = ctx.triggerCharacter;
-            if (!trigger && results !== null) {
-                let result = JSON.parse(JSON.stringify(results))
-                results = null
-                return result
-            }
-            // autocomplete by KeyTrigger
-            let pos = {line: position.line, character: position.character}
-            if (KeyTrigger !== '') {
-                trigger = KeyTrigger
-                pos.character += 1
-            }
-            KeyTrigger = ''
-            results = null;
-            if (!trigger) return null;
-            return complete(document.getText(), pos, trigger);
+        if (e.kind === undefined && col+1 !== this.lineAt(e, row).text.length) {
+            // 退格的 kind 是 undefined，当退格时，也触发 suggest
+            return
         }
-	}, ...triggers)
+        if (this.autoSuggestDelay > 0) {
+            this.cursorTimeout = setTimeout((code, row, col) => this.delaySuggest(code, row, col), 
+                Math.max(this.minAutoSuggestDelay, this.autoSuggestDelay), 
+                e.textEditor.document.getText(), row, col+1)
+        }
+    }
 
-    context.subscriptions.push(completeDisposable)
+    updateConfig() {
+        var cfg = vscode.workspace.getConfiguration()
+        this.server = cfg.get(this.prefix+"server")
+        this.uuid = cfg.get(this.prefix+"uuid")
+        this.autoSuggestDelay = cfg.get(this.prefix+"autoSuggestDelay")
+    }
+
+    async activate(context) {
+        this.deactivate()
+
+        this.updateConfig()
+
+        let conf = await post(this.server + '/suggest/conf', {uuid: this.uuid})
+        this.triggers = conf.triggers || this.triggers
+        this.minAutoSuggestDelay = conf.minAutoSuggestDelay || this.minAutoSuggestDelay
+
+        this.addCommand('feedback', () => this.feedback())
+        this.addCommand('suggest', () => this.triggerSuggest('?'))
+
+        let cursorDispose = vscode.window.onDidChangeTextEditorSelection(
+            e => this.triggerSuggestWhenCursorStopped(e)
+        )
+        this.disposes.push(cursorDispose)
+
+        let completeDispose = vscode.languages.registerCompletionItemProvider('python', {
+            provideCompletionItems: (model, position, context, token) => this.provideCompletionItems(model, position, context, token)
+        }, ...this.triggers)
+        this.disposes.push(completeDispose)
+
+        for (let dispose of this.disposes) {
+            context.subscriptions.push(dispose)
+        }
+    }
+}
+
+var pyqaPlugin = null;
+
+async function activate(context) {
+    pyqaPlugin = new PyqaPlugin()
+    await pyqaPlugin.activate(context)
+    context.subscriptions.push(
+        vscode.commands.registerCommand(pyqaPlugin.prefix+"enable", () => pyqaPlugin.activate(context))
+    )
+    context.subscriptions.push(
+        vscode.commands.registerCommand(pyqaPlugin.prefix+"disable", () => pyqaPlugin.deactivate())
+    )
 }
 
 // this method is called when your extension is deactivated
-function deactivate() {}
+function deactivate() {
+    if (pyqaPlugin) {
+        pyqaPlugin.deactivate()
+        pyqaPlugin = null;
+    }
+}
 
 module.exports = {
 	activate,
