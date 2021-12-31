@@ -71,18 +71,18 @@ class PyqaPlugin {
         return [row, col, ch]
     }
 
-    feedback() {
-        post(this.server + "/suggest/feedback", {uuid: this.uuid}).then(
-            data => alertMsg(data.msg)
-        )
-    }
-
     addCommand(name, func) {
         let id = this.prefix + name
         this.disposes.push(
             vscode.commands.registerTextEditorCommand(id, func)
         )
         this.commands[name] = id
+    }
+
+    feedback() {
+        post(this.server + "/suggest/feedback", {uuid: this.uuid}).then(
+            data => alertMsg(data.msg)
+        )
     }
 
     async complete(text, row, col, trigger) {
@@ -104,34 +104,6 @@ class PyqaPlugin {
                 }
             }
         )
-    }
-
-    deactivate() {
-        clearTimeout(this.cursorTimeout)
-        for (let dispose of this.disposes) {
-            dispose.dispose()
-        }
-        this.disposes = []
-    }
-
-    async provideCompletionItems(model, position, token, context) {
-        let trigger = context.triggerCharacter;
-        if (this.keyTrigger === ' ' && this.results !== null) {
-            let result = convertCmpList(this.results)
-            this.results = null;
-            return result
-        }
-        let [row, col] = this.get_row_col(position)
-        // autocomplete by keyTrigger
-        if (this.keyTrigger !== '') {
-            trigger = this.keyTrigger
-            col += 1
-        }
-        this.keyTrigger = ''
-        this.results = null;
-        if (!trigger) return null;
-        let result = await this.complete(model.getText(), row, col, trigger)
-        return convertCmpList(result)
     }
 
     /**
@@ -162,6 +134,26 @@ class PyqaPlugin {
                 Math.max(this.minAutoSuggestDelay, this.autoSuggestDelay), 
                 e.textEditor.document.getText(), row, col+1)
         }
+    }
+
+    async provideCompletionItems(model, position, token, context) {
+        let trigger = context.triggerCharacter;
+        if (this.keyTrigger === ' ' && this.results !== null) {
+            let result = convertCmpList(this.results)
+            this.results = null;
+            return result
+        }
+        let [row, col] = this.get_row_col(position)
+        // autocomplete by keyTrigger
+        if (this.keyTrigger !== '') {
+            trigger = this.keyTrigger
+            col += 1
+        }
+        this.keyTrigger = ''
+        this.results = null;
+        if (!trigger) return null;
+        let result = await this.complete(model.getText(), row, col, trigger)
+        return convertCmpList(result)
     }
 
     updateConfig() {
@@ -203,6 +195,14 @@ class PyqaPlugin {
         for (let dispose of this.disposes) {
             context.subscriptions.push(dispose)
         }
+    }
+
+    deactivate() {
+        clearTimeout(this.cursorTimeout)
+        for (let dispose of this.disposes) {
+            dispose.dispose()
+        }
+        this.disposes = []
     }
 }
 
