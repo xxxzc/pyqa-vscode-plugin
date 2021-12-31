@@ -72,7 +72,7 @@ class PyqaPlugin {
     }
 
     async complete(text, row, col, trigger) {
-        let lines = text.split('\n').slice(0, col+this.extraRows)
+        let lines = text.split('\n').slice(0, row+this.extraRows)
         return post(this.server + "/suggest/answer", {
             lines: lines, trigger: trigger,
             row: row, col: col, 
