@@ -1,5 +1,5 @@
 const vscode = require('vscode');
-const fetch = require('node-fetch')
+const fetch = require('node-fetch');
 
 function alertMsg(msg) {
     vscode.window.showInformationMessage(msg)
@@ -18,6 +18,20 @@ async function post(url, data) {
         body: JSON.stringify(data)
     });
     return await res.json();
+}
+
+function convertCmpList(list) {
+    // We can't directly transfer MarkdownString from python
+    for (let item of list.items) {
+        // MarkdownString
+        if (item.documentation.supportThemeIcons != undefined) {
+            let doc = new vscode.MarkdownString(item.documentation.value, item.documentation.supportThemeIcons)
+            doc.isTrusted = item.documentation.isTrusted
+            doc.supportHtml = item.documentation.supportHtml
+            item.documentation = doc
+        }
+    }
+    return list
 }
 
 class PyqaPlugin {
@@ -103,7 +117,7 @@ class PyqaPlugin {
     async provideCompletionItems(model, position, token, context) {
         let trigger = context.triggerCharacter;
         if (this.keyTrigger === ' ' && this.results !== null) {
-            let result = JSON.parse(JSON.stringify(this.results))
+            let result = convertCmpList(this.results)
             this.results = null;
             return result
         }
@@ -116,7 +130,8 @@ class PyqaPlugin {
         this.keyTrigger = ''
         this.results = null;
         if (!trigger) return null;
-        return this.complete(model.getText(), row, col, trigger)
+        let result = await this.complete(model.getText(), row, col, trigger)
+        return convertCmpList(result)
     }
 
     /**
