@@ -1,5 +1,6 @@
 const vscode = require('vscode');
 const fetch = require('node-fetch');
+const { privateEncrypt } = require('crypto');
 
 function alertMsg(msg) {
     vscode.window.showInformationMessage(msg)
@@ -86,15 +87,12 @@ class PyqaPlugin {
     }
 
     async complete(text, row, col, trigger, uri=undefined) {
-        let workspace = undefined;
-        if (uri) {
-            workspace = vscode.workspace.getWorkspaceFolder(uri)
-        }
+        let workspace = uri && vscode.workspace.getWorkspaceFolder(uri)
         let lines = text.split('\n').slice(0, row+this.extraRows)
         return post(this.server + "/suggest/answer", {
             lines: lines, trigger: trigger,
             row: row, col: col, 
-            uuid: this.uuid, path: uri.fsPath, workspace: workspace.fsPath
+            uuid: this.uuid, path: uri && uri.fsPath, workspace: workspace && workspace.uri.fsPath
         })
     }
 
@@ -134,7 +132,7 @@ class PyqaPlugin {
             return
         }
         if (this.autoSuggestDelay > 0) {
-            this.cursorTimeout = setTimeout((code, row, col) => this.delaySuggest(code, row, col), 
+            this.cursorTimeout = setTimeout((code, row, col, uri) => this.delaySuggest(code, row, col, uri), 
                 Math.max(this.minAutoSuggestDelay, this.autoSuggestDelay), 
                 e.textEditor.document.getText(), row, col+1, e.textEditor.document.uri)
         }
