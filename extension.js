@@ -85,18 +85,22 @@ class PyqaPlugin {
         )
     }
 
-    async complete(text, row, col, trigger) {
+    async complete(text, row, col, trigger, uri=undefined) {
+        let workspace = undefined;
+        if (uri) {
+            workspace = vscode.workspace.getWorkspaceFolder(uri)
+        }
         let lines = text.split('\n').slice(0, row+this.extraRows)
         return post(this.server + "/suggest/answer", {
             lines: lines, trigger: trigger,
             row: row, col: col, 
-            uuid: this.uuid
+            uuid: this.uuid, path: uri.fsPath, workspace: workspace.fsPath
         })
     }
 
-    delaySuggest(code, row, col) {
+    delaySuggest(code, row, col, uri) {
         // trigger ' ' to disable some features
-        this.complete(code, row, col, ' ').then(
+        this.complete(code, row, col, ' ', uri).then(
             res => {
                 if (res && res.items && res.items.length) {
                     this.results = res
@@ -132,7 +136,7 @@ class PyqaPlugin {
         if (this.autoSuggestDelay > 0) {
             this.cursorTimeout = setTimeout((code, row, col) => this.delaySuggest(code, row, col), 
                 Math.max(this.minAutoSuggestDelay, this.autoSuggestDelay), 
-                e.textEditor.document.getText(), row, col+1)
+                e.textEditor.document.getText(), row, col+1, e.textEditor.document.uri)
         }
     }
 
@@ -152,7 +156,7 @@ class PyqaPlugin {
         this.keyTrigger = ''
         this.results = null;
         if (!trigger) return null;
-        let result = await this.complete(model.getText(), row, col, trigger)
+        let result = await this.complete(model.getText(), row, col, trigger, model.uri)
         return convertCmpList(result)
     }
 
