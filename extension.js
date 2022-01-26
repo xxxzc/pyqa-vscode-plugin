@@ -1,6 +1,5 @@
 const vscode = require('vscode');
 const fetch = require('node-fetch');
-const { privateEncrypt } = require('crypto');
 
 function alertMsg(msg) {
     vscode.window.showInformationMessage(msg)
@@ -211,14 +210,16 @@ class PyqaPlugin {
 var pyqaPlugin = null;
 
 async function activate(context) {
-    pyqaPlugin = new PyqaPlugin()
+    if (!pyqaPlugin) {
+        pyqaPlugin = new PyqaPlugin()
+        context.subscriptions.push(
+            vscode.commands.registerCommand(pyqaPlugin.prefix+"enable", () => pyqaPlugin.activate(context))
+        )
+        context.subscriptions.push(
+            vscode.commands.registerCommand(pyqaPlugin.prefix+"disable", () => pyqaPlugin.deactivate())
+        )
+    }
     await pyqaPlugin.activate(context)
-    context.subscriptions.push(
-        vscode.commands.registerCommand(pyqaPlugin.prefix+"enable", () => pyqaPlugin.activate(context))
-    )
-    context.subscriptions.push(
-        vscode.commands.registerCommand(pyqaPlugin.prefix+"disable", () => pyqaPlugin.deactivate())
-    )
 }
 
 // this method is called when your extension is deactivated
