@@ -13,11 +13,16 @@ function checkFileExt(editor) {
 }
 
 async function post(url, data) {
-    const res = await fetch(url, {
-        method: "post", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-    });
-    return await res.json();
+    try {
+        const res = await fetch(url, {
+            method: "post", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        });
+        return await res.json();
+    } catch (error) {
+        
+    }
+    return {}
 }
 
 function convertCmpList(list) {
@@ -45,6 +50,7 @@ class PyqaPlugin {
         this.prefix = 'pyqa-plugin.'
         this.triggers = ['?', '!']
         this.minAutoSuggestDelay = 400
+        this.extraRows = 5
     }
 
     triggerSuggest(trigger=' ') {
@@ -80,8 +86,12 @@ class PyqaPlugin {
     }
 
     feedback() {
-        post(this.server + "/suggest/feedback", {uuid: this.uuid}).then(
-            data => alertMsg(data.msg)
+        let uri = vscode.window.activeTextEditor.document.uri
+        post(this.server + "/suggest/feedback", {
+            uuid: this.uuid,
+            path: uri && uri.fsPath
+        }).then(
+            data => alertMsg(data.msg || 'Feedback failed.')
         )
     }
 
@@ -90,7 +100,7 @@ class PyqaPlugin {
         let lines = text.split('\n').slice(0, row+this.extraRows)
         return post(this.server + "/suggest/answer", {
             lines: lines, trigger: trigger,
-            row: row, col: col, 
+            row: row, col: col,
             uuid: this.uuid, path: uri && uri.fsPath, workspace: workspace && workspace.uri.fsPath
         })
     }
